@@ -13,23 +13,23 @@ import java.util.Date;
 
 @Service
 public class JwtService {
-    @Value("jwt.secret")
-    private String SECRET_KEY ;
+    @Value("${jwt.secret}")
+    private String SECRET_KEY;
 
     public String generateToken(UserDetails userDetails) {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
                 .issuedAt(new Date(System.currentTimeMillis()))
-                .expiration(new Date(System.currentTimeMillis()+1000*60*60))
+                .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60))
                 .signWith(getSecretKey())
                 .compact();
     }
 
-    public String extractUserName( String jwt ) {
+    public String extractUserName(String jwt) {
         return extractAllClaims(jwt).getSubject();
     }
 
-    public Claims extractAllClaims( String jwt ) {
+    public Claims extractAllClaims(String jwt) {
         return Jwts.parser()
                 .verifyWith(getSecretKey())
                 .build()
@@ -43,13 +43,13 @@ public class JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public boolean isTokenValid( String jwt, UserDetails userDetails ) {
+    public boolean isTokenValid(String jwt, UserDetails userDetails) {
         final String userName = extractUserName(jwt);
         return (userName.equals(userDetails.getUsername())
-                    && !isTokenExpired(jwt));
+                && !isTokenExpired(jwt));
     }
 
-    private boolean isTokenExpired( String jwt ) {
+    private boolean isTokenExpired(String jwt) {
         return extractAllClaims(jwt)
                 .getExpiration()
                 .before(new Date());

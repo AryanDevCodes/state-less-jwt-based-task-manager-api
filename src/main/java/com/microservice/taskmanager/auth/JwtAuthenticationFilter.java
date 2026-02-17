@@ -12,36 +12,45 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import org.springframework.util.AntPathMatcher;
+
 import java.io.IOException;
 
 @Configuration
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
-    private final CustomerUserDetailsService userDetailsService ;
+    private final CustomerUserDetailsService userDetailsService;
+
+    private static final AntPathMatcher pathMatcher = new AntPathMatcher();
+
     @Override
     @NullMarked
-    protected void doFilterInternal( HttpServletRequest request,
-                                     HttpServletResponse response,
-                                     FilterChain filterChain ) throws ServletException, IOException
-    {
-        String authHeader = request.getHeader( "Authorization" );
-        if ( authHeader == null || !authHeader.startsWith( "Bearer " ) ) {
-            filterChain.doFilter( request, response );
+    protected void doFilterInternal(HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain) throws ServletException, IOException {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
         }
         assert authHeader != null;
-        String jwt = authHeader.substring( 7 );
+        String jwt = authHeader.substring(7);
         String userName = jwtService.extractUserName(jwt);
 
-        if ( userName !=null && SecurityContextHolder.getContext().getAuthentication() == null ) {
+        if (userName != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(userName);
 
-            if ( jwtService.isTokenValid(jwt,userDetails) ){
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+            if (jwtService.isTokenValid(jwt, userDetails)) {
+                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(userDetails,
+                        null, userDetails.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
         }
-        filterChain.doFilter( request, response );
+        filterChain.doFilter(request, response);
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        return pathMatcher.match("/api/auth/**", request.getServletPath());
     }
 }

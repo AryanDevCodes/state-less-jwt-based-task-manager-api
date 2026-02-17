@@ -15,10 +15,9 @@ public class CustomerUserDetailsService implements UserDetailsService {
 
     @Override
     @NullMarked
-    public UserDetails loadUserByUsername( String username ) throws UsernameNotFoundException {
-        return userRepository.findUserByUsername(username)
+    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        return userRepository.findByEmail(email)
                 .orElseThrow(
-                        () -> new UsernameNotFoundException("User not found with username: " + username)
-                );
+                        () -> new UsernameNotFoundException("User not found with email: " + email));
     }
 }
