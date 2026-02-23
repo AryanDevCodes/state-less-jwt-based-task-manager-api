@@ -1,6 +1,24 @@
 # Task Manager - OAuth2 URL-Based Authentication
 
 ## Overview
+
+## Hybrid Authentication Flow: JWT + OAuth2
+
+This project uses a hybrid authentication approach, combining traditional JWT-based login and OAuth2 (Google) login. Both methods ultimately provide the user with JWT access and refresh tokens, enabling stateless authentication and seamless integration for Single Page Applications (SPA), mobile clients, and cross-domain scenarios.
+
+### Flow Diagram
+
+![Hybrid Authentication Flow](docs/hybrid-auth-flow.png)
+
+**Diagram Explanation:**
+- **SignIn Methods:** User can sign in using either username/password or Google OAuth2.
+- **Username + Password:** Handled by `LoginService`, which authenticates and returns JWT tokens in a JSON DTO.
+- **Google Click:** Handled by `OidcUserService` and `OAuth2SuccessHandler`, which redirects the user and provides JWT + refresh tokens via URL parameters.
+- **JWT + RefreshToken:** Both flows converge to provide stateless authentication tokens, which the frontend extracts and stores securely.
+
+This hybrid approach allows flexible authentication, supporting both social login and traditional credentials, while maintaining a unified token-based security model.
+
+---
 This project implements a **stateless JWT-based authentication system** with **OAuth2 Google login** using URL-based token transfer. After successful authentication (via Google OAuth2 or traditional email/password), JWT tokens are transferred from backend to frontend via URL query parameters, enabling seamless cross-domain authentication and token handoff.
 
 ### Key Features
@@ -152,14 +170,6 @@ spring.jpa.show-sql=false
 ### Step 3: Create Security Configuration
 **File**: `src/main/java/com/microservice/taskmanager/config/SecurityConfig.java`
 
-**Key Changes**:
-- ✅ Added `@EnableMethodSecurity` - Enables `@PreAuthorize` annotations on methods
-- ✅ Set `SessionCreationPolicy.STATELESS` - No session management
-- ✅ Disabled CSRF - Not needed for stateless APIs
-- ✅ Added JWT filter before `UsernamePasswordAuthenticationFilter`
-- ✅ Created `PasswordEncoder` bean using `BCryptPasswordEncoder`
-- ✅ Created `AuthenticationManager` bean for login authentication
-
 **Configuration Details**:
 ```java
 @Configuration
@@ -234,8 +244,6 @@ public boolean isTokenValid(String jwt, UserDetails userDetails) {
 @Value("${jwt.secret}")  // Must include ${} for property placeholder resolution
 @Value("${jwt.expiration}")
 ```
-
-**⚠️ Critical Fix**: Changed `@Value("jwt.secret")` to `@Value("${jwt.secret}")` - without `${}`, Spring won't resolve the property value.
 
 ### Step 5: Create JWT Authentication Filter
 **File**: `src/main/java/com/microservice/taskmanager/auth/JwtAuthenticationFilter.java`
@@ -331,9 +339,6 @@ public LoginResponseDTO login(LoginDTO dto) {
 }
 ```
 
-**What Changed**:
-- **Before**: Session creation after login
-- **After**: JWT token generation after login
 
 ### Step 7: Create User Details Service
 **File**: `src/main/java/com/microservice/taskmanager/auth/CustomerUserDetailsService.java`
@@ -375,9 +380,6 @@ public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
 }
 ```
 
-**What Changed**:
-- **Before**: Global role-based authorization
-- **After**: Method-level role and SpEL-based authorization
 
 ### Step 9: Add @Transactional for Database Operations
 **File**: `src/main/java/com/microservice/taskmanager/service/TaskService.java`
@@ -391,9 +393,6 @@ public void deleteTask(long id) {
 }
 ```
 
-**What Changed**:
-- **Before**: Not needed in session context
-- **After**: Explicitly required for stateless operations
 
 ### Step 10: Use DTOs Instead of Entity Objects
 **Changes**:
@@ -531,40 +530,19 @@ Response: 200 OK [tasks...]
 
 ### 🔐 Security Considerations
 
-1. **Secret Key Management**
-   - Must be at least 256 bits (32 bytes) when Base64 encoded
-   - Should be stored in environment variables, not hardcoded
-   - Never expose in version control
+#### URL-Based Token Transition: Security & Performance
 
-2. **Token Expiration**
-   - Current: 1 hour (3600000 ms)
-   - Consider shorter for sensitive operations
-   - Consider refresh tokens for longer sessions
+**Security:**
+- Tokens are visible in the URL only briefly after login; frontend removes them immediately.
+- Always use HTTPS to protect tokens during transit.
+- Access tokens are short-lived; refresh tokens are rotated for safety.
+- Avoid logging URLs containing tokens; browser history may expose them.
+- For production, consider HttpOnly cookies or other secure storage.
 
-3. **Password Requirements**
-   - Minimum 8 characters recommended
-   - Should include special characters for production
-   - Consider implementing password validation rules
-
-4. **HTTPS Requirement**
-   - Always use HTTPS in production
-   - Tokens should be transmitted over encrypted channels only
-
-### 🚀 Performance Considerations
-
-1. **Database Calls**
-   - JWT validation currently queries database for each request
-   - Consider caching UserDetails for frequently accessed users
-   - Use Redis for distributed caching in microservices
-
-2. **Token Validation**
-   - No database query needed if token cache is implemented
-   - Only signature verification would be needed
-
-3. **Scalability**
-   - Stateless design allows horizontal scaling
-   - No session affinity required
-   - Any server instance can validate the token
+**Performance:**
+- Stateless JWT validation enables horizontal scaling and microservice compatibility.
+- No session affinity required; any server can validate tokens.
+- Token validation is fast (signature check, no DB call if user info is cached).
 
 ### 🔧 Configuration Properties
 
@@ -581,29 +559,6 @@ spring.hibernate.ddl-auto=update                # Auto-schema management
 server.port=8080
 server.servlet.context-path=/
 ```
-
-### ⚠️ Common Pitfalls Fixed
-
-1. **JWT Secret Missing `${}`**
-   - ❌ `@Value("jwt.secret")` → Literal string, not property value
-   - ✅ `@Value("${jwt.secret}")` → Correctly resolves from properties
-
-2. **Missing @EnableMethodSecurity**
-   - ❌ @PreAuthorize not enforced
-   - ✅ Added to SecurityConfig
-
-3. **Missing @Transactional on Delete**
-   - ❌ `TransactionRequiredException` on delete operations
-   - ✅ Added to deleteTask methods
-
-4. **Circular Reference in JSON Serialization**
-   - ❌ User → tasks → User (infinite loop)
-   - ✅ Added @JsonIgnore on User.tasks
-   - ✅ Use DTOs in API responses instead of entities
-
-5. **Repository Method Names**
-   - ❌ `findUserByEmail()` - custom naming
-   - ✅ `findByEmail()` - Spring Data convention
 
 ### 📊 Authentication Flow Diagram
 
