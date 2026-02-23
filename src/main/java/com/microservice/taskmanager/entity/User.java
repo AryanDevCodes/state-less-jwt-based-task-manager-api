@@ -25,10 +25,13 @@ public class User implements UserDetails {
     @Column(name = "user_id", nullable = false)
     private Long id;
 
+    private String name;
+
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
+    @JsonIgnore
     private String password;
 
     @Enumerated(EnumType.STRING)

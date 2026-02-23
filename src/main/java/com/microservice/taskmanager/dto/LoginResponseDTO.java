@@ -4,6 +4,7 @@ import lombok.Data;
 
 @Data
 public class LoginResponseDTO {
+    String email;
     String token;
-    Long expirationDate;
+    private String refreshToken;
 }
