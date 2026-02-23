@@ -1,29 +1,110 @@
-# Stateless Authentication Configuration Guide
+# Task Manager - OAuth2 URL-Based Authentication
 
 ## Overview
-This document outlines the transition from a **stateful** authentication system (session-based) to a **stateless** authentication system (JWT-based) in the Task Manager microservice using Spring Security 7.x.
+This project implements a **stateless JWT-based authentication system** with **OAuth2 Google login** using URL-based token transfer. After successful authentication (via Google OAuth2 or traditional email/password), JWT tokens are transferred from backend to frontend via URL query parameters, enabling seamless cross-domain authentication and token handoff.
+
+### Key Features
+- ✅ OAuth2 integration with Google (OIDC)
+- ✅ JWT-based stateless authentication
+- ✅ URL-based token transfer for cross-domain compatibility
+- ✅ Refresh token implementation with rotation
+- ✅ Spring Security 7.x configuration
+- ✅ Role-based access control
 
 ---
 
-## What is Changed: Stateful vs Stateless
+## OAuth2 URL-Based Authentication Flow
 
-### Stateful Authentication (Previous)
-- User logs in → Server creates session → Stores session in memory/database
-- Client stores session ID in cookie
-- Every request validates against stored session
-- Server maintains user state
-- **Problem**: Not scalable for microservices, requires session sharing across instances
+### Google OAuth2 Login Flow
 
-### Stateless Authentication (Current)
-- User logs in → Server generates JWT token → Token returned to client
-- Client stores token and sends it with every request
-- Server validates token signature without storing state
-- All info encoded in JWT token itself
-- **Benefit**: Scalable, no session management needed, works across multiple servers
+1. **User Initiates Login**
+   - User clicks "Login with Google" button
+   - Redirected to Google's OAuth2 authorization page
+
+2. **Google Authentication**
+   - User authenticates with Google
+   - Google redirects back to application with authorization code
+
+3. **Backend Token Generation**
+   - Backend exchanges authorization code for user info
+   - Creates/updates user in database
+   - Generates JWT access token (1-hour expiry)
+   - Generates refresh token (7-day expiry)
+
+4. **Token Transfer via URL**
+   - Backend redirects to frontend with tokens in URL:
+   ```
+   http://localhost:8080/?accessToken=eyJhbGc...&refreshToken=uuid-string&email=user@example.com
+   ```
+
+5. **Frontend Token Handling**
+   - JavaScript extracts tokens from URL parameters
+   - Saves tokens to localStorage
+   - Cleans URL to remove exposed tokens
+   - User is authenticated and can access protected resources
+
+### Why URL-Based Token Transfer?
+
+**Use Cases:**
+- **Cross-Domain Authentication**: Cookies don't work across different domains
+- **OAuth2 Redirects**: Standard practice for OAuth2 authorization code flow
+- **Microservices**: Token handoff between authentication and application services
+- **Mobile/SPA**: Compatible with various client architectures
+
+**Security Considerations:**
+- ⚠️ Tokens visible in URL temporarily (browser history, logs, referer headers)
+- ✅ Frontend immediately removes tokens from URL after extraction
+- ✅ Use HTTPS in production to prevent interception
+- ✅ Short-lived access tokens (1 hour) minimize risk window
+- ✅ HttpOnly cookies recommended for production (alternative approach)
+
+## Implementation Details
+
+### OAuth2 Google Configuration
+
+**CustomSuccessHandler** handles successful OAuth2 authentication and redirects with tokens:
+
+```java
+@Component
+public class CustomSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
+    
+    @Override
+    public void onAuthenticationSuccess(...) {
+        // Extract user from Google OIDC token
+        DefaultOidcUser oidcUser = (DefaultOidcUser) authentication.getPrincipal();
+        
+        // Create/update user in database
+        User user = userRepository.findByEmail(email).orElseGet(() -> createNewUser(email, name));
+        
+        // Generate tokens
+        String accessToken = jwtService.generateToken(user);
+        String refreshToken = refreshTokenService.createRefreshToken(user).getToken();
+        
+        // Redirect with tokens in URL
+        String targetUrl = "http://localhost:8080/?accessToken=" + accessToken + 
+                          "&refreshToken=" + refreshToken + "&email=" + email;
+        getRedirectStrategy().sendRedirect(request, response, targetUrl);
+    }
+}
+```
+
+**Frontend Token Extraction** (JavaScript):
+
+```javascript
+const params = new URLSearchParams(window.location.search);
+const accessToken = params.get('accessToken');
+const refreshToken = params.get('refreshToken');
+
+if (accessToken && refreshToken) {
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+    window.history.replaceState({}, document.title, window.location.pathname);
+}
+```
 
 ---
 
-## Step-by-Step Configuration Changes
+## JWT Stateless Authentication Configuration
 
 ### Step 1: Add Dependencies
 **File**: `pom.xml`
@@ -149,8 +230,8 @@ public boolean isTokenValid(String jwt, UserDetails userDetails) {
 ```
 
 **Configuration**:
-```properties
-@Value("${jwt.secret}")  # Must include ${} for property placeholder resolution
+```java
+@Value("${jwt.secret}")  // Must include ${} for property placeholder resolution
 @Value("${jwt.expiration}")
 ```
 
@@ -622,6 +703,7 @@ curl -X DELETE http://localhost:8080/api/tasks/1 \
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: February 17, 2026  
-**Framework**: Spring Boot 4.0.2 with Spring Security 7.0.2
+**Document Version**: 2.0  
+**Last Updated**: February 24, 2026  
+**Framework**: Spring Boot 4.0.2 with Spring Security 7.0.2  
+**Branch**: url-based-token-setup
