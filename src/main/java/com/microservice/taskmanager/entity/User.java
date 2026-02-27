@@ -5,6 +5,8 @@ import com.microservice.taskmanager.entity.role.Role;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+
+import org.hibernate.envers.Audited;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,6 +21,7 @@ import java.util.List;
 @Table(name = "user_tb", indexes = {
         @Index(name = "idx_user_email", columnList = "email")
 })
+@Audited
 public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
