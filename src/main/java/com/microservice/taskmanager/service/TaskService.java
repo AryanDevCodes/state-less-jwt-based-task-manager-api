@@ -8,6 +8,13 @@ import com.microservice.taskmanager.repositories.TaskRepository;
 import com.microservice.taskmanager.repositories.UserRepository;
 import com.microservice.taskmanager.service.mapper.TaskMapper;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+
+
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -24,12 +31,20 @@ public class TaskService {
     private final UserRepository userRepository;
 
     @PreAuthorize("hasRole('USER')")
-    public List<TaskResponseDto> getMyTask() {
+    public List<TaskResponseDto> getMyTask(int page, int size, String sortBy, String direction) {
         // retrieve current user
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        return taskRepository.findByUser_Email(email)
-                .stream().map(taskMapper::toResponseDto)
-                .toList();
+
+        Sort sort = direction.equalsIgnoreCase("desc")
+                ? Sort.by(sortBy).descending()
+                : Sort.by(sortBy).ascending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        // 3. Fetch the Page of Entities
+        Page<Task> taskPage = taskRepository.findByUser_Email(email, pageable);
+
+        return taskPage.map(taskMapper::toResponseDto).getContent();
     }
 
     @PreAuthorize("hasRole('USER')")

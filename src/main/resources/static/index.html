@@ -61,6 +61,23 @@
         <button class="primary" type="submit">Add task</button>
       </form>
 
+      <div class="task-controls" style="margin-bottom:10px;">
+        <label>Page <input id="taskPage" type="number" min="0" value="0" style="width:50px;"></label>
+        <label>Size <input id="taskSize" type="number" min="1" value="10" style="width:50px;"></label>
+        <label>Sort by
+          <select id="taskSortBy">
+            <option value="taskId">Task ID</option>
+            <option value="headLine">Headline</option>
+          </select>
+        </label>
+        <label>Direction
+          <select id="taskDirection">
+            <option value="asc">Asc</option>
+            <option value="desc">Desc</option>
+          </select>
+        </label>
+        <button id="taskReloadBtn" type="button">Reload</button>
+      </div>
       <ul id="taskList" class="task-list"></ul>
       <p id="taskMessage" class="message"></p>
     </section>

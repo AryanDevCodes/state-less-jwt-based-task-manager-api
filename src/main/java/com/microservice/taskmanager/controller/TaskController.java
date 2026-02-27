@@ -20,8 +20,13 @@ public class TaskController {
 
     @GetMapping
     @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<List<TaskResponseDto>> getAllTasks() {
-        return ResponseEntity.ok(taskService.getMyTask());
+    public ResponseEntity<List<TaskResponseDto>> getAllTasks(
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "10") int size,
+        @RequestParam(defaultValue = "taskId") String sortBy,
+        @RequestParam(defaultValue = "asc") String direction
+    ) {
+        return ResponseEntity.ok(taskService.getMyTask(page,size,sortBy,direction));
     }
 
     @PostMapping

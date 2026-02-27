@@ -712,9 +712,303 @@ Response: 200 OK [tasks...]
 |--------|----------|------|-------------|
 | POST | `/api/auth/register` | ❌ Public | Register new user |
 | POST | `/api/auth/login` | ❌ Public | Login and get JWT token |
-| GET | `/api/tasks` | ✅ USER | Get user's tasks |
+| GET | `/api/tasks` | ✅ USER | Get user's tasks (with pagination & sorting) |
 | POST | `/api/tasks` | ✅ USER | Create new task |
 | DELETE | `/api/tasks/{id}` | ✅ ADMIN or Owner | Delete task |
+| POST | `/api/refresh/token` | ❌ Public | Refresh expired JWT token |
+
+---
+
+## Pagination & Sorting Feature
+
+### Overview
+The Task Manager implements **server-side pagination and sorting** using Spring Data JPA's `Pageable` interface. Users can retrieve tasks with custom page size, sorting field, and sort direction through REST API query parameters.
+
+### Architecture
+
+**Three-Layer Implementation:**
+
+#### 1. REST API Layer (TaskController)
+```java
+@GetMapping
+@PreAuthorize("hasRole('USER')")
+public ResponseEntity<List<TaskResponseDto>> getAllTasks(
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "10") int size,
+    @RequestParam(defaultValue = "taskId") String sortBy,
+    @RequestParam(defaultValue = "asc") String direction
+) {
+    return ResponseEntity.ok(taskService.getMyTask(page, size, sortBy, direction));
+}
+```
+
+**Query Parameters:**
+- `page` (int, default=0): Zero-indexed page number
+- `size` (int, default=10): Number of results per page
+- `sortBy` (String, default="taskId"): Field name to sort by (taskId or headLine)
+- `direction` (String, default="asc"): Sort direction (asc or desc)
+
+**Example Requests:**
+```bash
+# Default pagination (page 0, 10 results, sorted by taskId ascending)
+GET /api/tasks
+
+# Page 2, 20 results per page, sorted by headLine descending
+GET /api/tasks?page=2&size=20&sortBy=headLine&direction=desc
+
+# First page with 5 results, sorted by taskId ascending
+GET /api/tasks?page=0&size=5&sortBy=taskId
+```
+
+#### 2. Business Logic Layer (TaskService)
+```java
+@PreAuthorize("hasRole('USER')")
+public List<TaskResponseDto> getMyTask(int page, int size, String sortBy, String direction) {
+    String email = SecurityContextHolder.getContext().getAuthentication().getName();
+    
+    // Construct Sort object based on direction
+    Sort sort = direction.equalsIgnoreCase("desc")
+        ? Sort.by(sortBy).descending()
+        : Sort.by(sortBy).ascending();
+    
+    // Create PageRequest with sort configuration
+    Pageable pageable = PageRequest.of(page, size, sort);
+    
+    // Query database with pagination and sorting
+    Page<Task> taskPage = taskRepository.findByUser_Email(email, pageable);
+    
+    // Map Task entities to DTOs
+    return taskPage.map(taskMapper::toResponseDto).getContent();
+}
+```
+
+**Key Features:**
+- ✅ Retrieves current user from SecurityContext
+- ✅ Constructs Sort object dynamically based on user parameters
+- ✅ Creates PageRequest combining page, size, and sort configuration
+- ✅ Maps Task entities to TaskResponseDto using MapStruct
+- ✅ Returns only the content (List), not pagination metadata
+
+#### 3. Data Access Layer (TaskRepository)
+```java
+public interface TaskRepository extends JpaRepository<Task, Long> {
+    Page<Task> findByUser_Email(String email, Pageable pageable);
+    void deleteByTaskId(Long taskId);
+}
+```
+
+**Spring Data JPA Magic:**
+- ✅ Automatically generates SQL with WHERE, ORDER BY, LIMIT/OFFSET clauses
+- ✅ Supports Pageable parameter for pagination and sorting
+- ✅ No manual SQL writing required
+
+### Frontend Integration
+
+#### HTML UI Controls (index.html)
+```html
+<div class="pagination-controls">
+    <label>Page: <input id="taskPage" type="number" min="0" value="0" style="width:50px;"></label>
+    <label>Size: <input id="taskSize" type="number" min="1" value="10" style="width:50px;"></label>
+    <label>Sort By: 
+        <select id="taskSortBy">
+            <option value="taskId">Task ID</option>
+            <option value="headLine">Headline</option>
+        </select>
+    </label>
+    <label>Direction: 
+        <select id="taskDirection">
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+        </select>
+    </label>
+    <button id="taskReloadBtn" type="button">Reload</button>
+</div>
+```
+
+#### JavaScript API Integration (app.js)
+```javascript
+async function loadTasks() {
+    // Get pagination parameters from UI controls
+    const page = document.getElementById('taskPage')?.value || 0;
+    const size = document.getElementById('taskSize')?.value || 10;
+    const sortBy = document.getElementById('taskSortBy')?.value || 'taskId';
+    const direction = document.getElementById('taskDirection')?.value || 'asc';
+    
+    // Construct query string with pagination parameters
+    const url = `/api/tasks?page=${page}&size=${size}&sortBy=${sortBy}&direction=${direction}`;
+    
+    try {
+        const response = await request(url, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        // Get task list from response
+        const tasks = await response.json();
+        
+        // Render tasks in UI
+        renderTasks(tasks);
+    } catch (error) {
+        console.error('Failed to load tasks:', error);
+        showError('Failed to load tasks');
+    }
+}
+
+// Event listeners to trigger reload on parameter changes
+document.getElementById('taskPage')?.addEventListener('change', loadTasks);
+document.getElementById('taskSize')?.addEventListener('change', loadTasks);
+document.getElementById('taskSortBy')?.addEventListener('change', loadTasks);
+document.getElementById('taskDirection')?.addEventListener('change', loadTasks);
+document.getElementById('taskReloadBtn')?.addEventListener('click', loadTasks);
+```
+
+### Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│         PAGINATION & SORTING REQUEST FLOW               │
+└─────────────────────────────────────────────────────────┘
+
+USER INTERACTION
+────────────────
+1. User changes pagination/sorting controls in UI
+2. Event listener triggers loadTasks()
+3. JavaScript constructs URL with query parameters
+4. Fetch request sent: GET /api/tasks?page=1&size=20&sortBy=headLine&direction=desc
+
+API REQUEST → CONTROLLER
+───────────────────────
+1. TaskController.getAllTasks() receives query parameters
+2. Default values applied if parameters missing
+3. Parameters passed to service layer
+
+SERVICE LAYER PROCESSING
+────────────────────────
+1. TaskService.getMyTask(page=1, size=20, sortBy=headLine, direction=desc)
+2. Current user email retrieved from SecurityContext
+3. Sort object created: Sort.by("headLine").descending()
+4. PageRequest created: PageRequest.of(1, 20, sort)
+5. Call repository method with Pageable
+
+DATABASE QUERY
+──────────────
+1. TaskRepository.findByUser_Email(email, pageable)
+2. Spring Data JPA generates SQL:
+   SELECT * FROM task 
+   WHERE user_id = ? 
+   ORDER BY head_line DESC 
+   LIMIT 20 OFFSET 20
+
+RESPONSE PROCESSING
+───────────────────
+1. Spring returns Page<Task> with metadata
+2. Service maps Task entities to TaskResponseDto
+3. Service returns content list (pagination metadata discarded)
+4. Controller returns ResponseEntity with task list
+
+FRONTEND RENDERING
+──────────────────
+1. JavaScript receives JSON array of tasks
+2. renderTasks() updates DOM with task list
+3. UI reflects current pagination state (page 1, showing 20 results)
+```
+
+### Available Sortable Fields
+
+Currently supported fields for sorting:
+- ✅ `taskId` - Task unique identifier (default)
+- ✅ `headLine` - Task headline/title
+
+**Future Enhancement:** Extend to support additional fields (description, createdDate, lastModifiedDate, etc.)
+
+### Pagination Behavior
+
+**Pagination Calculation:**
+- **Page Size**: Number of results per page (1-100 recommended, default=10)
+- **Page Number**: Zero-indexed (0 = first page, 1 = second page, etc.)
+- **Offset Calculation**: offset = page × size
+  - Page 0, Size 10 → offset = 0 (results 0-9)
+  - Page 1, Size 10 → offset = 10 (results 10-19)
+  - Page 2, Size 20 → offset = 40 (results 40-59)
+
+### Sorting Behavior
+
+**Direction Options:**
+- `asc` (ascending): Lowest to highest (A-Z, 0-9)
+- `desc` (descending): Highest to lowest (Z-A, 9-0)
+
+**Example Sort Results:**
+```
+sortBy=taskId&direction=asc:   Task 1, Task 2, Task 3, ...
+sortBy=taskId&direction=desc:  Task 999, Task 998, Task 997, ...
+sortBy=headLine&direction=asc: Apple, Banana, Cherry, ...
+sortBy=headLine&direction=desc: Zebra, Yarn, Xylophone, ...
+```
+
+### Security Features
+
+✅ **Role-Based Access**: @PreAuthorize("hasRole('USER')")
+✅ **User Context Isolation**: SecurityContext ensures users only see their tasks
+✅ **Email-Based Filtering**: Query filters by authenticated user's email
+✅ **No Data Leakage**: JOIN statements prevent accessing other users' tasks
+
+### Response Format
+
+**Response Body** (List of TaskResponseDto):
+```json
+[
+    {
+        "taskId": 1,
+        "headLine": "Complete project documentation",
+        "description": "Write comprehensive documentation for the task manager"
+    },
+    {
+        "taskId": 2,
+        "headLine": "Fix pagination bugs",
+        "description": "Resolve issues with page navigation"
+    }
+]
+```
+
+**Note**: Response is a List, not a Page object. Pagination metadata (total records, total pages, etc.) is not returned to the client.
+
+### Testing Pagination & Sorting
+
+```bash
+# Get first page (default: 10 results, sorted by taskId ascending)
+curl -X GET "http://localhost:8080/api/tasks" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Get second page with 20 results per page
+curl -X GET "http://localhost:8080/api/tasks?page=1&size=20" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Sort by headline in descending order
+curl -X GET "http://localhost:8080/api/tasks?sortBy=headLine&direction=desc" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Combined: page 2, size 15, sorted by headline descending
+curl -X GET "http://localhost:8080/api/tasks?page=2&size=15&sortBy=headLine&direction=desc" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Performance Considerations
+
+✅ **Database Indexing**: Ensure columns used in sorting have database indexes
+✅ **Page Size Limits**: Consider enforcing maximum page size (e.g., max 100) to prevent abuse
+✅ **Lazy Loading**: DTOs prevent loading related entities, improving query performance
+✅ **Query Optimization**: Spring Data JPA generates optimized SQL with LIMIT/OFFSET
+
+### Future Enhancements
+
+1. **Return Pagination Metadata**: Modify response to include total records, total pages, current page, has next/previous
+2. **Dynamic Field Validation**: Implement whitelist validation for sortBy parameter
+3. **Multiple Sort Fields**: Support sorting by multiple fields (e.g., taskId asc, headLine desc)
+4. **Search Filtering**: Add filtering by keyword, date range, status
+5. **Cursor-Based Pagination**: Alternative to offset-based for large datasets
+6. **Custom Comparators**: Client-side sorting options for specific use cases
 
 ---
 
@@ -886,7 +1180,7 @@ curl -X DELETE http://localhost:8080/api/tasks/1 \
 
 ---
 
-**Document Version**: 2.0  
-**Last Updated**: February 24, 2026  
+**Document Version**: 2.1  
+**Last Updated**: February 27, 2026  
 **Framework**: Spring Boot 4.0.2 with Spring Security 7.0.2  
-**Branch**: url-based-token-setup
+**Branch**: feature/pagination-sorting

@@ -162,7 +162,13 @@ function renderTasks(tasks) {
 }
 
 async function loadTasks() {
-  const response = await request('/api/tasks');
+  // Get pagination/sort controls
+  const page = document.getElementById('taskPage')?.value || 0;
+  const size = document.getElementById('taskSize')?.value || 10;
+  const sortBy = document.getElementById('taskSortBy')?.value || 'taskId';
+  const direction = document.getElementById('taskDirection')?.value || 'asc';
+  const url = `/api/tasks?page=${page}&size=${size}&sortBy=${sortBy}&direction=${direction}`;
+  const response = await request(url);
   if (!response.ok) {
     taskMessage.textContent = 'Could not load tasks.';
     return;
@@ -254,10 +260,25 @@ logoutBtn.addEventListener('click', async () => {
   taskList.innerHTML = '';
 });
 
+
+(function setupTaskControls() {
+  const page = document.getElementById('taskPage');
+  const size = document.getElementById('taskSize');
+  const sortBy = document.getElementById('taskSortBy');
+  const direction = document.getElementById('taskDirection');
+  const reloadBtn = document.getElementById('taskReloadBtn');
+  if (page && size && sortBy && direction && reloadBtn) {
+    page.addEventListener('change', loadTasks);
+    size.addEventListener('change', loadTasks);
+    sortBy.addEventListener('change', loadTasks);
+    direction.addEventListener('change', loadTasks);
+    reloadBtn.addEventListener('click', loadTasks);
+  }
+})();
+
 (async function init() {
   // Check if we have an access token cookie (from OAuth2 or regular login)
   const accessToken = getCookie('accessToken');
-  
   if (accessToken) {
     // Extract email from token
     try {
@@ -270,7 +291,6 @@ logoutBtn.addEventListener('click', async () => {
     } catch (e) {
       console.error('Failed to parse token', e);
     }
-    
     setUiAuthenticated(true);
     await loadTasks();
   } else {
